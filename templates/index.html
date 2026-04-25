@@ -6,6 +6,82 @@
     <title>Telegram Toplu Üye Ekleme Paneli</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+    <script>
+// Sayfa yüklendiğinde kayıtlı ayarları yükle
+window.onload = function() {
+    const saved = JSON.parse(localStorage.getItem('telegramSettings'));
+    if (saved) {
+        document.getElementById('apiId').value = saved.apiId || '';
+        document.getElementById('apiHash').value = saved.apiHash || '';
+        document.getElementById('phoneNumber').value = saved.phone || '';
+        document.getElementById('targetGroupId').value = saved.groupId || '';
+    }
+};
+
+function saveApiSettings() {
+    const settings = {
+        apiId: document.getElementById('apiId').value,
+        apiHash: document.getElementById('apiHash').value,
+        phone: document.getElementById('phoneNumber').value,
+        groupId: document.getElementById('targetGroupId').value
+    };
+    localStorage.setItem('telegramSettings', JSON.stringify(settings));
+    alert('✅ API ayarları kaydedildi!');
+}
+
+function saveGroupId() {
+    let settings = JSON.parse(localStorage.getItem('telegramSettings')) || {};
+    settings.groupId = document.getElementById('targetGroupId').value;
+    localStorage.setItem('telegramSettings', JSON.stringify(settings));
+    alert('✅ Grup ID kaydedildi!');
+}
+
+async function connectTelegram() {
+    const apiId = document.getElementById('apiId').value;
+    const apiHash = document.getElementById('apiHash').value;
+    const phone = document.getElementById('phoneNumber').value;
+
+    const response = await fetch('/api/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiId, apiHash, phoneNumber: phone })
+    });
+    const result = await response.json();
+
+    if (result.status === 'code_needed') {
+        document.getElementById('codeSection').style.display = 'block';
+        alert('📩 Doğrulama kodu gönderildi!');
+    } else if (result.success) {
+        updateConnectionStatus(true);
+    } else {
+        alert('❌ Bağlantı hatası: ' + result.message);
+    }
+}
+
+async function sendCode() {
+    const code = document.getElementById('authCode').value;
+    const password = document.getElementById('twoFAPassword')?.value;
+
+    const response = await fetch('/api/verify_code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, password })
+    });
+    const result = await response.json();
+
+    if (result.status === '2fa_needed') {
+        document.getElementById('twoFASection').style.display = 'block';
+    } else if (result.success) {
+        updateConnectionStatus(true);
+    } else {
+        alert('❌ Doğrulama hatası: ' + result.message);
+    }
+}
+
+function updateConnectionStatus(connected) {
+    // Bağlantı durumunu güncelleyen fonksiyon (kendi tasarımına göre doldur)
+}
+</script>
 <body>
     <div id="codeSection" style="display:none;">
   <input type="text" id="authCode" placeholder="Telegram'dan gelen kodu girin">
