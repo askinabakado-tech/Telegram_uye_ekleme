@@ -7,6 +7,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <div id="codeSection" style="display:none;">
+  <input type="text" id="authCode" placeholder="Telegram'dan gelen kodu girin">
+  <button onclick="sendCode()">Kodu Gönder</button>
+</div>
+<div id="twoFASection" style="display:none;">
+  <input type="password" id="twoFAPassword" placeholder="İki faktörlü şifre">
+  <button onclick="sendCode()">Şifreyi Gönder</button>
+</div>
     <div class="container">
         <header>
             <h1>📱 Telegram Toplu Üye Ekleme</h1>
@@ -176,6 +184,81 @@
             <p>⚠️ Lütfen Telegram'ın hizmet şartlarına uyun</p>
         </footer>
     </div>
+    <script>
+  // Sayfa yüklendiğinde kayıtlı ayarları yükle
+  window.onload = function() {
+    const savedSettings = JSON.parse(localStorage.getItem('telegramSettings'));
+    if (savedSettings) {
+      document.getElementById('apiId').value = savedSettings.apiId || '';
+      document.getElementById('apiHash').value = savedSettings.apiHash || '';
+      document.getElementById('phoneNumber').value = savedSettings.phone || '';
+      document.getElementById('targetGroupId').value = savedSettings.groupId || '';
+    }
+  };
+
+  function saveApiSettings() {
+    const apiId = document.getElementById('apiId').value;
+    const apiHash = document.getElementById('apiHash').value;
+    const phone = document.getElementById('phoneNumber').value;
+    
+    const settings = {
+      apiId, apiHash, phone,
+      groupId: document.getElementById('targetGroupId').value
+    };
+    localStorage.setItem('telegramSettings', JSON.stringify(settings));
+    alert('Ayarlar kaydedildi!');
+  }
+
+  function saveGroupId() {
+    const groupId = document.getElementById('targetGroupId').value;
+    let settings = JSON.parse(localStorage.getItem('telegramSettings')) || {};
+    settings.groupId = groupId;
+    localStorage.setItem('telegramSettings', JSON.stringify(settings));
+    alert('Grup ID kaydedildi!');
+  }
+
+  async function connectTelegram() {
+    const apiId = document.getElementById('apiId').value;
+    const apiHash = document.getElementById('apiHash').value;
+    const phone = document.getElementById('phoneNumber').value;
+
+    const response = await fetch('/api/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({apiId, apiHash, phoneNumber: phone})
+    });
+    const result = await response.json();
+    
+    if (result.status === 'code_needed') {
+      document.getElementById('codeSection').style.display = 'block';
+      alert('Doğrulama kodu gönderildi. Lütfen girin.');
+    } else if (result.success) {
+      updateConnectionStatus(true);
+    } else {
+      alert('Bağlantı hatası: ' + result.message);
+    }
+  }
+
+  async function sendCode() {
+    const code = document.getElementById('authCode').value;
+    const password = document.getElementById('twoFAPassword')?.value;
+    
+    const response = await fetch('/api/verify_code', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code, password})
+    });
+    const result = await response.json();
+
+    if (result.status === '2fa_needed') {
+      document.getElementById('twoFASection').style.display = 'block';
+    } else if (result.success) {
+      updateConnectionStatus(true);
+    } else {
+      alert('Doğrulama hatası: ' + result.message);
+    }
+  }
+    </script>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
