@@ -2,12 +2,12 @@
 Telegram Toplu Üye Ekleme Paneli
 Flask Backend
 """
-
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 import asyncio
 import os
 import threading
+import json
 from config import SECRET_KEY, HOST, PORT, DEBUG
 from app.telegram_handler import TelegramHandler
 import logging
@@ -37,60 +37,78 @@ def init_telegram():
         telegram_handler = TelegramHandler()
 
 
-@app.route('/', methods=['GET'])
-def index():
-    """Ana sayfa"""
-    return render_template('index.html')
-
-
 @app.route('/api/connect', methods=['POST'])
 def connect_telegram():
-    """Telegram'a bağlan"""
     global telegram_handler, loop
-    
     try:
         data = request.get_json()
         api_id = data.get('apiId')
         api_hash = data.get('apiHash')
         phone_number = data.get('phoneNumber')
-        
+
         if not api_id or not api_hash or not phone_number:
-            return jsonify({
-                'success': False,
-                'message': 'API bilgileri eksik'
-            }), 400
-        
+            return jsonify({'success': False, 'message': 'API bilgileri eksik'}), 400
+
         init_telegram()
-        
-        # API bilgilerini handler'a ilet
         telegram_handler.set_credentials(api_id, api_hash, phone_number)
-        
-        # Telegram'a bağlan (async işlemi threadsafe yap)
+
         def connect():
             return loop.run_until_complete(telegram_handler.start_client())
         
         thread = threading.Thread(target=connect)
         thread.start()
         thread.join(timeout=30)
-        
+
+        # Yeni durum kontrolü
         if telegram_handler.is_connected:
-            return jsonify({
-                'success': True,
-                'message': 'Telegram\'a bağlanıldı'
-            })
+            return jsonify({'success': True, 'message': 'Telegram\'a bağlanıldı', 'status': 'connected'})
+        elif hasattr(telegram_handler, 'code_needed') and telegram_handler.code_needed:
+            return jsonify({'success': True, 'message': 'Doğrulama kodu gönderildi', 'status': 'code_needed'})
         else:
-            return jsonify({
-                'success': False,
-                'message': 'Telegram bağlantı başarısız. API bilgilerini kontrol edin.'
-            }), 400
-    
+            return jsonify({'success': False, 'message': 'Telegram bağlantı başarısız.'}), 400
     except Exception as e:
         logger.error(f"Bağlantı hatası: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Hata: {str(e)}'
-        }), 400
+        return jsonify({'success': False, 'message': f'Hata: {str(e)}'}), 400
 
+@app.route('/api/verify_code', methods=['POST'])
+def verify_code():
+    global telegram_handler, loop
+    data = request.get_json()
+    code = data.get('code')
+    password = data.get('password')  # 2FA şifresi
+
+    if not code:
+        return jsonify({'success': False, 'message': 'Kod gerekli'}), 400
+
+    try:
+        def verify():
+            return loop.run_until_complete(telegram_handler.verify_code(code, password))
+        
+        thread = threading.Thread(target=verify)
+        thread.start()
+        thread.join(timeout=30)
+
+        if telegram_handler.is_connected:
+            return jsonify({'success': True, 'message': 'Doğrulama başarılı, bağlanıldı'})
+        elif hasattr(telegram_handler, '2fa_needed') and telegram_handler.2fa_needed:
+            return jsonify({'success': True, 'message': 'İki faktörlü doğrulama şifresi gerekli', 'status': '2fa_needed'})
+        else:
+            return jsonify({'success': False, 'message': 'Doğrulama başarısız'}), 400
+    except Exception as e:
+        logger.error(f"Doğrulama hatası: {str(e)}")
+        return jsonify({'success': False, 'message': f'Hata: {str(e)}'}), 400
+
+@app.route('/api/start-adding', methods=['POST'])
+def start_adding():
+    global telegram_handler, loop
+    data = request.get_json()
+    usernames = data.get('usernames', [])
+    group_id = data.get('groupId')
+
+    if not group_id:
+        return jsonify({'success': False, 'message': 'Grup ID belirtilmedi'}), 400
+        
+telegram_handler.target_group_id = int(group_id)
 
 @app.route('/api/disconnect', methods=['POST'])
 def disconnect_telegram():
