@@ -2,7 +2,6 @@
 Telegram API İşlemlerini Yöneten Modül
 Telethon kütüphanesi kullanıyor
 """
-
 import asyncio
 import logging
 from telethon import TelegramClient
@@ -20,40 +19,54 @@ class TelegramHandler:
         self.phone_number = None
         self.client = None
         self.is_connected = False
-        self.target_group_id = None  # Web panelinden ayarlanacak
+        self.target_group_id = None
         self.results = {
             'success': [],
             'failed': [],
             'already_member': [],
             'blocked': []
         }
-    
+
     def set_credentials(self, api_id, api_hash, phone_number):
-        """API kimlik bilgilerini ayarla"""
         self.api_id = int(api_id)
         self.api_hash = api_hash
         self.phone_number = phone_number
-        
-        # Yeni client oluştur
-        self.client = TelegramClient(
-            'session_name',
-            self.api_id,
-            self.api_hash
-        )
-    
+        self.client = TelegramClient('session_name', self.api_id, self.api_hash)
+
     async def start_client(self):
-        """Telegram istemcisini başlat"""
         try:
             if not self.client:
                 logger.error("✗ Client ayarlanmamış")
                 return False
-            
-            await self.client.start(phone=self.phone_number)
+            # Bağlantıyı başlat, ancak kullanıcıya kod sormak için hemen bekleme
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                await self.client.send_code_request(self.phone_number)
+                logger.info("✓ Doğrulama kodu gönderildi")
+                # Bu noktada kodun girilmesi beklenir, bu yüzden False dönüyoruz
+                self.is_connected = False
+                return "code_needed"
             self.is_connected = True
             logger.info("✓ Telegram'a bağlanıldı")
             return True
         except Exception as e:
             logger.error(f"✗ Telegram bağlantı hatası: {str(e)}")
+            return False
+
+    async def verify_code(self, code, password=None):
+        try:
+            await self.client.sign_in(self.phone_number, code)
+            self.is_connected = True
+            return True
+        except SessionPasswordNeededError:
+            if password:
+                await self.client.sign_in(password=password)
+                self.is_connected = True
+                return True
+            else:
+                return "2fa_needed"
+        except Exception as e:
+            logger.error(f"Doğrulama hatası: {str(e)}")
             return False
     
     async def stop_client(self):
